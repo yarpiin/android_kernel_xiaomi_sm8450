@@ -1939,6 +1939,9 @@ out:
 	if (core_data->board_data.support_thp_fw) {
 		core_data->hw_ops->set_coor_mode(core_data);
 	}
+	if (core_data->high_report_rate) {
+		core_data->hw_ops->switch_report_rate(core_data, true);
+	}
 	ts_info("Resume end");
 	return 0;
 }
@@ -1970,13 +1973,17 @@ static void goodix_set_gesture_work(struct work_struct *work)
 		core_data->nonui_enabled ? 0 : core_data->gesture_type;
 
 	if (target_gesture_type == 0) {
-		disable_irq_wake(core_data->irq);
 		hw_ops->irq_enable(core_data, false);
 		hw_ops->gesture(core_data, 0);
 		goto exit;
 	}
 
-	hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
+	res = hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
+	if (res) {
+		ts_err("reset failed during gesture works");
+		goto exit;
+	}
+
 	res = hw_ops->gesture(core_data, target_gesture_type);
 	if (res) {
 		ts_err("failed enter gesture mode");
@@ -1985,7 +1992,6 @@ static void goodix_set_gesture_work(struct work_struct *work)
 		ts_err("enter gesture mode");
 	}
 	hw_ops->irq_enable(core_data, true);
-	enable_irq_wake(core_data->irq);
 
 exit:
 	pm_relax(core_data->bus->dev);
@@ -2018,6 +2024,9 @@ static int goodix_set_cur_value(void *private, enum touch_mode mode, int value)
 	case TOUCH_MODE_NONUI_MODE:
 		ts_core->nonui_enabled = value != 0;
 		break;
+	case TOUCH_MODE_REPORT_RATE:
+		ts_core->hw_ops->switch_report_rate(ts_core, value);
+		goto exit;
 	default:
 		ts_err("handler got mode %d with value %d, not implemented",
 		       mode, value);
@@ -2027,6 +2036,7 @@ static int goodix_set_cur_value(void *private, enum touch_mode mode, int value)
 	queue_delayed_work(ts_core->gesture_wq, &ts_core->gesture_work,
 			   msecs_to_jiffies(GOODIX_NORMAL_GESTURE_DELAY_MS));
 
+exit:
 	return 0;
 }
 static int goodix_get_mode_value(void *private, enum touch_mode mode)

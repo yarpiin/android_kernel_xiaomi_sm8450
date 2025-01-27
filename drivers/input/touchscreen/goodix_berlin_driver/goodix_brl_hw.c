@@ -317,6 +317,27 @@ exit:
 	return ret;
 }
 
+#define GOODIX_HIGH_RATE_CMD 0xC0
+static int brl_switch_report_rate(struct goodix_ts_core *cd, bool high)
+{
+	struct goodix_ts_cmd cmd;
+	int ret = 0;
+
+	cmd.cmd = GOODIX_HIGH_RATE_CMD;
+	cmd.len = 5;
+	cmd.data[0] = high;
+	ret = cd->hw_ops->send_cmd(cd, &cmd);
+	if (ret < 0) {
+		ts_err("failed to send report rate cmd, high = %d", high);
+		goto exit;
+	}
+	ts_info("report rate switch: %s", high ? "480HZ" : "240HZ");
+	cd->high_report_rate = high;
+
+exit:
+	return ret;
+}
+
 int brl_resume(struct goodix_ts_core *cd)
 {
 	int ret = 0;
@@ -337,6 +358,7 @@ int brl_resume(struct goodix_ts_core *cd)
 int brl_gesture(struct goodix_ts_core *cd, int gesture_type)
 {
 	struct goodix_ts_cmd cmd;
+	int ret = 0;
 
 	if (cd->bus->ic_type == IC_TYPE_BERLIN_A)
 		cmd.cmd = GOODIX_GESTURE_CMD_BA;
@@ -345,10 +367,12 @@ int brl_gesture(struct goodix_ts_core *cd, int gesture_type)
 	cmd.len = 6;
 	cmd.data[0] = (gesture_type >> 0) & 0x01;
 	cmd.data[1] = (gesture_type >> 1) & 0x01;
-	if (cd->hw_ops->send_cmd(cd, &cmd))
+
+	ret = cd->hw_ops->send_cmd(cd, &cmd);
+	if (ret)
 		ts_err("failed send gesture cmd");
 
-	return 0;
+	return ret;
 }
 
 static int brl_reset(struct goodix_ts_core *cd, int delay)
@@ -1545,6 +1569,7 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.after_event_handler = brl_after_event_handler,
 	.get_capacitance_data = brl_get_capacitance_data,
 	.set_coor_mode = brl_set_coor_mode,
+	.switch_report_rate = brl_switch_report_rate,
 };
 
 struct goodix_ts_hw_ops *goodix_get_hw_ops(void)
